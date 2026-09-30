@@ -220,3 +220,42 @@ def build(pred_pos, pred_edges, gt_pos, gt_edges, d_mm,
                          "difference as much as the reconstruction and should "
                          "not be reported."])),
     }
+
+
+# The 21 metrics analysed in the paper, grouped as there. Six further variants
+# (node precision/recall, node p2c F1, edge Hungarian/midpoint/box-IoU F1) and
+# N_cc (identical to beta0_err) are only in the long report.
+SHORT_REPORT = {
+    "tolerance_based": ["node_F1", "edge_m2m_F1", "cl_coverage", "cov_len",
+                        "branch_coverage_F1", "overlap_first_error",
+                        "branch_continuity", "junction_F1", "endpoint_F1"],
+    "distance_based": ["node_chamfer", "node_HD95", "SMD", "APLS"],
+    "structural_counts": ["beta0_err", "beta1_err", "N_bif",
+                          "branch_count_ratio"],
+    "geometric": ["Len_tot", "Len_br", "Ang_bif", "tortuosity"],
+}
+
+
+def summary(report, digits=4):
+    """One number per metric, as reported in the paper.
+
+    Geometric descriptors and N_bif are given as the absolute difference
+    between prediction and reference; every other metric as its value.
+    """
+    m = report["metrics"]
+
+    def one(name):
+        res = m[name]
+        v = res["abs_error"] if "abs_error" in res else res.get("value")
+        return None if v is None else round(float(v), digits)
+
+    return {
+        "ceval_version": report["ceval_version"],
+        "prediction": report["inputs"]["prediction"],
+        "reference": report["inputs"]["reference"],
+        "tolerance_mm": report["tolerance"]["D_mm"],
+        "spacing_check_passed": report["spacing_check"]["passed"],
+        "metrics": {group: {n: one(n) for n in names}
+                    for group, names in SHORT_REPORT.items()},
+        "warnings": report["warnings"],
+    }

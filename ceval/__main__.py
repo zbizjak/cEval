@@ -2,6 +2,7 @@
 
     python3 -m ceval pred.vtp gt.vtp --d-mm 0.7
     python3 -m ceval pred.vtp gt.vtp --dataset topcow_mr -o report.json
+    python3 -m ceval pred.vtp gt.vtp --d-mm 0.7 --long-report
 """
 import argparse
 import json
@@ -9,7 +10,7 @@ import sys
 from pathlib import Path
 
 from ceval.io import read_vtp_polylines
-from ceval.report import SpacingMismatch, build
+from ceval.report import SpacingMismatch, build, summary
 
 # Matching tolerance (dataset mean voxel diagonal, mm) used in the paper.
 D_MM = {"topcow_mr": 0.7, "topcow_ct": 0.9, "aortaseg24": 1.6, "imagecas": 0.7}
@@ -23,6 +24,10 @@ def main():
                     help="matching tolerance in mm (mean voxel diagonal)")
     ap.add_argument("--dataset", help="look D up by dataset name instead")
     ap.add_argument("-o", "--output", help="write here (default: stdout)")
+    ap.add_argument("--long-report", "--long_report", dest="long_report",
+                    action="store_true",
+                    help="write every metric with all its details "
+                         "(default: one value per metric)")
     ap.add_argument("--force", action="store_true",
                     help="evaluate despite a failed spacing check; the matching "
                          "metrics will not be interpretable")
@@ -44,8 +49,11 @@ def main():
     except SpacingMismatch as exc:
         sys.exit(f"error: {exc}")
 
+    if not args.long_report:
+        report = summary(report)
     text = json.dumps(report, indent=2)
     if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output).write_text(text)
         print(f"-> {args.output}")
         for w in report["warnings"]:
