@@ -43,20 +43,57 @@ used in the paper (`topcow_mr`, `topcow_ct`, `aortaseg24`, `imagecas`).
 
 ## Python
 
-```python
-from ceval import evaluate
-from ceval.io import read_vtp_polylines
+Run from the repository root:
 
-pred_pos, pred_edges = read_vtp_polylines("prediction.vtp")
-gt_pos, gt_edges = read_vtp_polylines("reference.vtp")
-scores = evaluate(pred_pos, pred_edges, gt_pos, gt_edges, d_mm=0.7)
-print(scores["SMD"]["value"], scores["endpoint_F1"]["value"])
+```python
+from ceval import build
+from ceval.io import read_vtp_polylines
+from ceval.report import summary
+
+pred_pos, pred_edges = read_vtp_polylines("examples/prediction.vtp")
+gt_pos, gt_edges = read_vtp_polylines("examples/reference.vtp")
+
+report = build(pred_pos, pred_edges, gt_pos, gt_edges, d_mm=0.7)  # long report
+short = summary(report)                                            # one value per metric
+
+for group, metrics in short["metrics"].items():
+    print(group)
+    for name, value in metrics.items():
+        print(f"  {name:<20s} {value}")
 ```
 
-`evaluate` returns the long form. `ceval.report.summary(ceval.build(...))` gives the short one.
+Output:
+
+```
+tolerance_based
+  node_F1              0.9114
+  edge_m2m_F1          0.9143
+  cl_coverage          0.9145
+  cov_len              0.8447
+  branch_coverage_F1   0.9231
+  overlap_first_error  0.8451
+  branch_continuity    0.8725
+  junction_F1          0.8
+  endpoint_F1          0.8889
+distance_based
+  node_chamfer         0.4379
+  node_HD95            4.5872
+  SMD                  0.4293
+  APLS                 0.779
+structural_counts
+  beta0_err            0.0
+  beta1_err            0.0
+  N_bif                1.0
+  branch_count_ratio   0.2857
+geometric
+  Len_tot              14.1421
+  Len_br               2.0152
+  Ang_bif              0.0
+  tortuosity           0.0
+```
 
 `pred_pos` and `gt_pos` are `(N, 3)` arrays in mm, `pred_edges` and `gt_edges` are `(E, 2)`
-arrays of node indices.
+arrays of node indices. `report` holds the long report (the same as `--long-report`).
 
 ## Recommended metrics
 
