@@ -1,3 +1,5 @@
+![cEval](img_readme.jpeg)
+
 # ceval
 
 Evaluation of centerline graphs. `ceval` compares a predicted centerline graph with a
@@ -6,6 +8,11 @@ reference graph and reports all metrics from the paper under one protocol:
 - both graphs are densified so that no edge is longer than the matching tolerance `D`,
   before any metric is computed;
 - the tolerance is recorded with every score.
+
+![No single metric reports every error](docs/overview.png)
+
+*Different metrics respond to different errors (blue: the metric responds, red: it does not).
+No single metric reports every error, which is why the choice of metrics matters.*
 
 ## Quick start (Docker)
 
