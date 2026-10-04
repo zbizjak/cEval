@@ -41,8 +41,14 @@ def cov_len(pred_pos, pred_edges, gt_pos, gt_edges, tol):
     return {"value": covered / total if total else 0.0, "gt_length_mm": total}
 
 
-def smd(pred_pos, pred_edges, gt_pos, gt_edges, tol):
-    """Mean symmetric nearest-point distance between sampled clouds, in mm."""
+def ascd(pred_pos, pred_edges, gt_pos, gt_edges, tol):
+    """ASCD: mean symmetric nearest-point distance between sampled clouds, in mm.
+
+    Average symmetric centerline distance as defined by Liu et al., Med. Phys.
+    2025 (doi:10.1002/mp.17855). Formerly named SMD, but it is not Belli & Kipf's
+    StreetMover Distance: that is an optimal-transport (Wasserstein) distance
+    between equal-size point sets, this is a nearest-neighbour (Chamfer) mean.
+    """
     if not len(pred_pos) or not len(gt_pos):
         return {"value": float("inf")}
     p = sample_graph(pred_pos, pred_edges, tol / 4)
