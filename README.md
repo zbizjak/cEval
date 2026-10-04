@@ -85,7 +85,7 @@ tolerance_based
 distance_based
   node_chamfer         0.4379
   node_HD95            4.5872
-  SMD                  0.4293
+  ASCD                 0.4293
   APLS                 0.779
 structural_counts
   beta0_err            0.0
@@ -104,7 +104,7 @@ arrays of node indices. `report` holds the long report (the same as `--long-repo
 
 ## Recommended metrics
 
-We recommend reporting **SMD**, **endpoint F1** and **total length** (`Len_tot`), together with
+We recommend reporting $\color{red}{\textsf{\textbf{ASCD} (average symmetric centerline distance, Liu et al. 2025)}}$ [[doi]](https://doi.org/10.1002/mp.17855), **endpoint F1** and **total length** (`Len_tot`), together with
 the structural counts (`beta0_err`, `beta1_err`, `N_bif`, `branch_continuity`) that the clinical
 question depends on.
 
