@@ -1,4 +1,4 @@
-"""cEval — centerline graph evaluation."""
-from .report import METRICS, build, evaluate
+"""cEval: centerline graph evaluation."""
+from .report import METRICS, UNSUITABLE, build, evaluate, summary
 
-__all__ = ["build", "evaluate", "METRICS"]
+__all__ = ["build", "evaluate", "summary", "METRICS", "UNSUITABLE"]
