@@ -9,7 +9,7 @@ Definitions and criticism: see metrics.md.
 import numpy as np
 from scipy.spatial import cKDTree
 
-from .base import adjacency, components, f1
+from .base import adjacency, branch_paths, components, f1
 
 
 def _betti(n_nodes, edges):
@@ -59,3 +59,14 @@ def endpoint_f1(pred_pos, pred_edges, gt_pos, gt_edges, tol):
     """Free ends (degree 1) matched within tol — where pruning shows up."""
     return _point_f1(_nodes_of_degree(pred_pos, pred_edges, lambda d: d == 1),
                      _nodes_of_degree(gt_pos, gt_edges, lambda d: d == 1), tol)
+
+
+def branch_count_ratio(pred_pos, pred_edges, gt_pos, gt_edges, tol):
+    """|branches(pred) / branches(gt) - 1|: the relative difference in the number
+    of branches. Fragmentation raises it and merging lowers it."""
+    n_pred = len(branch_paths(pred_pos, pred_edges))
+    n_gt = len(branch_paths(gt_pos, gt_edges))
+    if n_gt == 0:
+        return {"value": float("inf"), "n_pred": n_pred, "n_gt": n_gt}
+    return {"value": abs(n_pred / n_gt - 1.0),
+            "n_pred": n_pred, "n_gt": n_gt}

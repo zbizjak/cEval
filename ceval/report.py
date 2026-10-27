@@ -1,57 +1,70 @@
-"""Run every metric on two centerline graphs and build the JSON report."""
+"""Run every metric on two centerline graphs and build the JSON report.
+
+Every metric is computed on the graphs exactly as given. The curve metrics
+measure the curves themselves and do not depend on where either graph places
+its nodes; the structural and shape metrics depend only on the junctions,
+endpoints and branches. The node metrics (UNSUITABLE) compare node positions
+and are reported separately, because their value changes when only the node
+spacing changes.
+"""
 from datetime import datetime, timezone
 
 import numpy as np
 
-from .metrics import (continuity, coverage, edge_matching, morphology,
-                      node_matching, path_metrics, topology)
-from .metrics.base import densify, spacing
+from .metrics import connectivity, curve, morphology, nodes, topology
 
-VERSION = "0.1"
+VERSION = "0.2"
 
 # name -> (function, family, lower_is_better)
 METRICS = {
-    "node_F1":            (node_matching.node_f1, "matching", False),
-    "node_precision":     (node_matching.node_precision, "matching", False),
-    "node_recall":        (node_matching.node_recall, "matching", False),
-    "node_p2c_F1":        (node_matching.node_p2c_f1, "matching", False),
-    "node_HD95":          (node_matching.node_hd95, "matching", True),
-    "node_chamfer":       (node_matching.node_chamfer, "matching", True),
-    "edge_m2m_F1":        (edge_matching.edge_m2m_f1, "matching", False),
-    "edge_hung_F1":       (edge_matching.edge_hungarian_f1, "matching", False),
-    "edge_midpoint_F1":   (edge_matching.edge_midpoint_f1, "matching", False),
-    "edge_box_iou_F1":    (edge_matching.edge_box_iou_f1, "matching", False),
-    "branch_coverage_F1": (edge_matching.branch_coverage_f1, "coverage", False),
-    "branch_continuity":  (continuity.branch_continuity, "coverage", False),
-    "branch_count_ratio": (continuity.branch_count_ratio, "coverage", True),
-    "cl_coverage":        (coverage.cl_coverage, "coverage", False),
-    "cov_len":            (coverage.cov_len, "coverage", False),
-    "ASCD":               (coverage.ascd, "coverage", True),
-    "overlap_first_error": (coverage.overlap_until_first_error, "coverage", False),
-    "beta0_err":          (topology.beta0_err, "topology", True),
-    "beta1_err":          (topology.beta1_err, "topology", True),
+    # curve coverage within tau
+    "edge_F1":            (curve.edge_f1, "coverage", False),
+    "edge_R":             (curve.edge_r, "coverage", False),
+    "overlap_OV":         (curve.overlap, "coverage", False),
+    "branch_coverage_F1_80": (curve.branch_coverage_f1_80, "coverage", False),
+    "branch_coverage_F1": (curve.branch_coverage_f1, "coverage", False),
+    # distances along the curves
+    "ASCD":               (curve.ascd, "distance", True),
+    "HD95":               (curve.hd95, "distance", True),
+    "netmets_geom_F1":    (curve.netmets_geometry, "distance", False),
+    # paths
+    "APLS":               (curve.apls, "path", False),
+    # junctions, endpoints and connections between them
     "junction_F1":        (topology.junction_f1, "topology", False),
     "endpoint_F1":        (topology.endpoint_f1, "topology", False),
-    "APLS":               (path_metrics.apls, "path", False),
+    "netmets_conn_F1":    (connectivity.netmets_connectivity, "topology", False),
+    # counts
+    "beta0_err":          (topology.beta0_err, "count", True),
+    "beta1_err":          (topology.beta1_err, "count", True),
+    "branch_count_ratio": (topology.branch_count_ratio, "count", True),
 }
 
-# TOPO is implemented (path_metrics.topo, correct on the identity/missing-
-# branch sanity checks) but its per-seed hole/marble matching does not scale
-# to real-size graphs (still running after minutes on a 3000-node case) --
-# excluded from the default set until that is fixed, rather than blocking the
-# ablation sweep.
-TOPO_METRICS = {"TOPO_F1": (path_metrics.topo, "path", False)}
+# Defined on nodes: their value depends on node spacing, so they are reported
+# apart and kept out of any selection of metrics.
+UNSUITABLE = {
+    "node_F1":            (nodes.node_f1, "nodes", False),
+    "chamfer":            (nodes.node_chamfer, "nodes", True),
+    "false_merges":       (connectivity.false_merges, "nodes", True),
+    "false_splits":       (connectivity.false_splits, "nodes", True),
+}
 
-# Metrics that need a segmentation volume or a radius channel, listed so the
-# omission is visible rather than silent.
+# Shape descriptors, computed for each graph; reported as |pred - reference|.
+DESCRIPTORS = ["Len_tot", "Len_br", "tortuosity", "Ang_bif"]
+
+# Metrics that need information a centerline graph does not carry, listed so
+# the omission is visible.
 EXCLUDED = {
     "Dice": "needs a segmentation mask",
-    "clDice": "needs a mask (Tprec = |S_P n V_L| / |S_P|); see cl_coverage",
+    "clDice": "needs a mask; edge_F1 is its graph-to-graph counterpart",
     "cbDice": "needs a mask and its distance transform",
     "ccDice": "needs a mask",
     "NSD": "needs surfaces",
-    "surface_HD95": "needs surfaces; node_HD95 is the graph analogue",
+    "surface_HD95": "needs surfaces; HD95 here is curve to curve",
     "Betti_matching": "defined on cubical complexes of masks",
+    "CAT08 OT / AI": "need the vessel radius at every point",
+    "CAT08 OF": "needs single ordered vessels from a designated root",
+    "DIADEM": "needs a rooted, directed tree",
+    "TOPO / OPT-G": "too slow at this scale",
     "NRI": "needs synapse annotations",
 }
 
@@ -66,128 +79,29 @@ def _clean(value):
     return v if np.isfinite(v) else None
 
 
-SPACING_TOLERANCE = 0.2   # prediction may differ from the reference by +/-20%
-
-
-def spacing_check(pred_pos, pred_edges, gt_pos, gt_edges):
-    """Are the two graphs sampled closely enough to be comparable?
-
-    Node- and edge-matching metrics measure the difference between two sampling
-    conventions as readily as they measure reconstruction error: a graph
-    compared against a coarser copy of itself — no error whatsoever — scores
-    0.05 on Hungarian edge F1 and 0.01 on box-IoU edge F1 in our measurements.
-
-    cEval checks rather than repairs. Resampling a graph is a decision about the
-    data: preserving a cycle formed by two parallel branches, for instance,
-    needs a rule that only the owner of the data can sensibly choose, and
-    applying it silently would hide exactly the confound this tool exists to
-    expose. Whether to resample the prediction, the reference, or both is the
-    caller's call.
-    """
-    sp_pred = spacing(pred_pos, pred_edges)
-    sp_gt = spacing(gt_pos, gt_edges)
-    ok = True
-    ratio = float("nan")
-    if np.isfinite(sp_pred) and np.isfinite(sp_gt) and sp_gt > 0:
-        ratio = sp_pred / sp_gt
-        ok = abs(ratio - 1.0) <= SPACING_TOLERANCE
-    return {
-        "passed": bool(ok),
-        "spacing_pred_mm": _clean(sp_pred),
-        "spacing_gt_mm": _clean(sp_gt),
-        "ratio": _clean(ratio),
-        "tolerance": SPACING_TOLERANCE,
-        "requirement": "median centerline spacing of the prediction must be "
-                       "within +/-20% of the reference",
-    }
-
-
-def evaluate(pred_pos, pred_edges, gt_pos, gt_edges, d_mm, densify_to=1.0):
-    """All metrics at tolerance d_mm. Returns {name: {value, ...}}.
-
-    Both graphs are first densified so that no edge is longer than
-    ``densify_to * d_mm``, the matching tolerance itself by default.
-
-    This inserts nodes along existing edges and moves nothing: every original
-    node keeps its position, and the traced curve, the branch decomposition,
-    every node degree and both Betti numbers are unchanged. What it does change
-    is that a point on one curve is then guaranteed a node within d_mm on the
-    other wherever the two agree, so a metric that pairs discrete elements
-    reports the reconstruction rather than the discretisation.
-
-    Measured on TopCoW MR with no error present and the prediction decimated
-    against a common dense base, every tolerance-based metric returns exactly
-    1.000 for prediction spacings from 0.09 to 3 times d_mm, and begins to fall
-    only near 6 times d_mm. Finer targets (d_mm/2, d_mm/4) give identical
-    results, so the tolerance itself is used. Metrics that require a one-to-one
-    assignment remain bounded by the ratio of edge counts and are improved but
-    not repaired by this step. Pass ``densify_to=None`` to compare the graphs
-    exactly as given.
-    """
-    if densify_to:
-        step = densify_to * d_mm
-        pred_pos, pred_edges = densify(pred_pos, pred_edges, step)
-        gt_pos, gt_edges = densify(gt_pos, gt_edges, step)
+def evaluate(pred_pos, pred_edges, gt_pos, gt_edges, tau):
+    """All metrics at tolerance tau (mm). Returns {name: {value, ...}}."""
     out = {}
-    for name, (fn, family, lower) in METRICS.items():
-        try:
-            res = fn(pred_pos, pred_edges, gt_pos, gt_edges, d_mm)
-        except Exception as exc:
-            res = {"value": float("nan"), "error": str(exc)[:200]}
-        res = _clean(res)
-        res["family"] = family
-        res["lower_is_better"] = lower
-        out[name] = res
-
+    for group, table in (("main", METRICS), ("unsuitable", UNSUITABLE)):
+        for name, (fn, family, lower) in table.items():
+            try:
+                res = fn(pred_pos, pred_edges, gt_pos, gt_edges, tau)
+            except Exception as exc:
+                res = {"value": float("nan"), "error": str(exc)[:200]}
+            res = _clean(res)
+            res.update(family=family, lower_is_better=lower, group=group)
+            out[name] = res
     for name, res in morphology.morphology(
-            pred_pos, pred_edges, gt_pos, gt_edges, d_mm).items():
+            pred_pos, pred_edges, gt_pos, gt_edges, tau).items():
         res = _clean(res)
-        res["family"] = "descriptor"
+        res.update(family="descriptor",
+                   group="main" if name in DESCRIPTORS else "similar")
         out[name] = res
     return out
 
 
-def warnings_for(pred_pos, pred_edges, gt_pos, gt_edges, d_mm):
-    sp_pred = spacing(pred_pos, pred_edges)
-    out = []
-    if np.isfinite(sp_pred) and sp_pred > d_mm:
-        out.append(
-            f"prediction spacing ({sp_pred:.3f} mm) exceeds the tolerance D "
-            f"({d_mm} mm): reference nodes can fall between predicted nodes "
-            f"with no correspondence, depressing node_F1 for reasons unrelated "
-            f"to reconstruction quality.")
-    return out
-
-
-class SpacingMismatch(Exception):
-    """The two graphs are not sampled closely enough to be comparable."""
-
-    def __init__(self, check):
-        self.check = check
-        super().__init__(
-            f"centerline spacing differs by {check['ratio']:.2f}x "
-            f"({check['spacing_pred_mm']:.3f} mm vs "
-            f"{check['spacing_gt_mm']:.3f} mm); the limit is "
-            f"+/-{int(100 * check['tolerance'])}%.\n"
-            f"Resample the prediction, the reference, or both to a common step "
-            f"before comparing, or pass --force to evaluate anyway. Forced "
-            f"results carry a failed spacing check and the matching metrics "
-            f"are not interpretable.")
-
-
-def build(pred_pos, pred_edges, gt_pos, gt_edges, d_mm,
-          pred_name=None, gt_name=None, force=False):
-    """The full JSON-serialisable report.
-
-    Raises ``SpacingMismatch`` unless ``force`` when the two graphs are sampled
-    too differently for the matching metrics to mean anything.
-    """
-    check = spacing_check(pred_pos, pred_edges, gt_pos, gt_edges)
-    if not check["passed"] and not force:
-        raise SpacingMismatch(check)
-
-    sp_pred = spacing(pred_pos, pred_edges)
-    sp_gt = spacing(gt_pos, gt_edges)
+def build(pred_pos, pred_edges, gt_pos, gt_edges, tau, pred_name=None, gt_name=None):
+    """The full JSON-serialisable report."""
     return {
         "ceval_version": VERSION,
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -199,63 +113,33 @@ def build(pred_pos, pred_edges, gt_pos, gt_edges, d_mm,
             "n_edges_pred": int(len(pred_edges)),
             "n_nodes_gt": int(len(gt_pos)),
             "n_edges_gt": int(len(gt_edges)),
-            "spacing_pred_mm": _clean(sp_pred),
-            "spacing_gt_mm": _clean(sp_gt),
         },
         "tolerance": {
-            "D_mm": float(d_mm),
+            "tau_mm": float(tau),
             "definition": "dataset mean voxel diagonal",
-            "caveat": "widely used in practice; no paper found that justifies "
-                      "it. CAT08 ties its tolerance to the local vessel radius "
-                      "instead, which is better justified but needs a radius "
-                      "channel.",
         },
-        "spacing_check": check,
-        "metrics": evaluate(pred_pos, pred_edges, gt_pos, gt_edges, d_mm),
+        "metrics": evaluate(pred_pos, pred_edges, gt_pos, gt_edges, tau),
         "excluded": EXCLUDED,
-        "warnings": (warnings_for(pred_pos, pred_edges, gt_pos, gt_edges, d_mm)
-                     + ([] if check["passed"] else [
-                         "SPACING CHECK FAILED and evaluation was forced. The "
-                         "node- and edge-matching metrics measure the sampling "
-                         "difference as much as the reconstruction and should "
-                         "not be reported."])),
     }
 
 
-# The 21 metrics analysed in the paper, grouped as there. Six further variants
-# (node precision/recall, node p2c F1, edge Hungarian/midpoint/box-IoU F1) and
-# N_cc (identical to beta0_err) are only in the long report.
-SHORT_REPORT = {
-    "tolerance_based": ["node_F1", "edge_m2m_F1", "cl_coverage", "cov_len",
-                        "branch_coverage_F1", "overlap_first_error",
-                        "branch_continuity", "junction_F1", "endpoint_F1"],
-    "distance_based": ["node_chamfer", "node_HD95", "ASCD", "APLS"],
-    "structural_counts": ["beta0_err", "beta1_err", "N_bif",
-                          "branch_count_ratio"],
-    "geometric": ["Len_tot", "Len_br", "Ang_bif", "tortuosity"],
-}
-
-
 def summary(report, digits=4):
-    """One number per metric, as reported in the paper.
-
-    Geometric descriptors and N_bif are given as the absolute difference
-    between prediction and reference; every other metric as its value.
-    """
-    m = report["metrics"]
-
-    def one(name):
-        res = m[name]
+    """One number per metric: the main metrics grouped by family, then the
+    node metrics. Descriptors are given as |pred - reference|."""
+    def one(res):
         v = res["abs_error"] if "abs_error" in res else res.get("value")
         return None if v is None else round(float(v), digits)
 
+    groups = {}
+    for name, res in report["metrics"].items():
+        if res["group"] == "main":
+            groups.setdefault(res["family"], {})[name] = one(res)
+        elif res["group"] == "unsuitable":
+            groups.setdefault("nodes", {})[name] = one(res)
     return {
         "ceval_version": report["ceval_version"],
         "prediction": report["inputs"]["prediction"],
         "reference": report["inputs"]["reference"],
-        "tolerance_mm": report["tolerance"]["D_mm"],
-        "spacing_check_passed": report["spacing_check"]["passed"],
-        "metrics": {group: {n: one(n) for n in names}
-                    for group, names in SHORT_REPORT.items()},
-        "warnings": report["warnings"],
+        "tolerance_mm": report["tolerance"]["tau_mm"],
+        "metrics": groups,
     }
