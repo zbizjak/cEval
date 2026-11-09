@@ -66,6 +66,24 @@ def branch_paths(points, edges):
                 path.append(nx)
                 prev, cur = cur, nx
             paths.append(path)
+
+    # closed rings without key nodes (in a graph that has key nodes elsewhere):
+    # cut each at one node so it counts as one branch
+    for u, v in edges:
+        u, v = int(u), int(v)
+        if u == v or (min(u, v), max(u, v)) in seen:
+            continue
+        seen.add((min(u, v), max(u, v)))
+        path, prev, cur = [u, v], u, v
+        while cur != u:
+            nxt = adj[cur] - {prev}
+            if not nxt:
+                break
+            nx = min(nxt)
+            seen.add((min(cur, nx), max(cur, nx)))
+            path.append(nx)
+            prev, cur = cur, nx
+        paths.append(path)
     return paths
 
 

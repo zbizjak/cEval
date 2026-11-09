@@ -1,9 +1,8 @@
-![cEval](img_readme.jpeg)
-
 # ceval
 
 Evaluation of centerline graphs. `ceval` compares a predicted centerline graph with a
-reference graph and reports all metrics from the paper under one protocol:
+reference graph under one protocol. By default it reports the four recommended metrics, and
+it can report all metrics from the paper:
 
 - the curve metrics compare the curves themselves, so they do not depend on where either
   graph places its nodes;
@@ -29,9 +28,10 @@ branch removed (`prediction.vtp`). The report is written to `examples/report.jso
 
 ## Output
 
-By default the report gives one value per metric, grouped as in the paper. Geometric
-descriptors (`Len_tot`, `Len_br`, `Ang_bif`, `tortuosity`) are given as the absolute
-difference between prediction and reference. Add `--long-report` to get every
+By default the report gives the four recommended metrics: `netmets_geom_F1`, `junction_F1`,
+`beta1_err` and `beta0_err`. Add `--all-metrics` to get one value per metric, grouped as in
+the paper. Geometric descriptors (`Len_tot`, `Len_br`, `Ang_bif`, `tortuosity`) are given as
+the absolute difference between prediction and reference. Add `--long-report` to get every
 metric with all its details (precision, recall, counts, values of both graphs).
 
 ## Your own data
@@ -57,12 +57,13 @@ Run from the repository root:
 ```python
 from ceval import build
 from ceval.io import read_vtp_polylines
-from ceval.report import summary
+from ceval.report import recommended, summary
 
 pred_pos, pred_edges = read_vtp_polylines("examples/prediction.vtp")
 gt_pos, gt_edges = read_vtp_polylines("examples/reference.vtp")
 
 report = build(pred_pos, pred_edges, gt_pos, gt_edges, tau=0.7)   # long report
+main4 = recommended(report)                                        # the four recommended metrics
 short = summary(report)                                            # one value per metric
 
 for group, metrics in short["metrics"].items():
@@ -111,9 +112,11 @@ arrays of node indices. `report` holds the long report (the same as `--long-repo
 
 ## Recommended metrics
 
-We recommend reporting $\color{red}{\textsf{\textbf{ASCD} (average symmetric centerline distance, Liu et al. 2025)}}$ [[doi]](https://doi.org/10.1002/mp.17855), **endpoint F1** and **total length** (`Len_tot`), together with
-the structural counts (`beta0_err`, `beta1_err`, `branch_count_ratio`) that the clinical
-question depends on.
+We recommend reporting **NetMets geom. F1** (`netmets_geom_F1`), **Junction F1**
+(`junction_F1`), **β1 error** (`beta1_err`) and **β0 error** (`beta0_err`) together as one
+set. Other metrics can be reported in addition with `--all-metrics`, for example ASCD
+(average symmetric centerline distance, Liu et al. 2025) [[doi]](https://doi.org/10.1002/mp.17855).
+We do not recommend the node metrics, which change with node spacing, or total length alone.
 
 ## License
 

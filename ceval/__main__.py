@@ -2,6 +2,7 @@
 
     python3 -m ceval pred.vtp gt.vtp --d-mm 0.7
     python3 -m ceval pred.vtp gt.vtp --dataset topcow_mr -o report.json
+    python3 -m ceval pred.vtp gt.vtp --d-mm 0.7 --all-metrics
     python3 -m ceval pred.vtp gt.vtp --d-mm 0.7 --long-report
 """
 import argparse
@@ -9,7 +10,7 @@ import json
 from pathlib import Path
 
 from ceval.io import read_vtp_polylines
-from ceval.report import build, summary
+from ceval.report import build, recommended, summary
 
 # Tolerance tau (dataset mean voxel diagonal, mm) used in the paper.
 D_MM = {"topcow_mr": 0.7, "topcow_ct": 0.9, "aortaseg24": 1.6, "imagecas": 0.7}
@@ -23,10 +24,14 @@ def main():
                     help="tolerance tau in mm (mean voxel diagonal)")
     ap.add_argument("--dataset", help="look D up by dataset name instead")
     ap.add_argument("-o", "--output", help="write here (default: stdout)")
+    ap.add_argument("--all-metrics", "--all_metrics", dest="all_metrics",
+                    action="store_true",
+                    help="write one value for every metric "
+                         "(default: the four recommended metrics)")
     ap.add_argument("--long-report", "--long_report", dest="long_report",
                     action="store_true",
                     help="write every metric with all its details "
-                         "(default: one value per metric)")
+                         "(default: the four recommended metrics)")
     args = ap.parse_args()
 
     if args.d_mm is None:
@@ -43,7 +48,7 @@ def main():
                    gt_name=Path(args.reference).name)
 
     if not args.long_report:
-        report = summary(report)
+        report = summary(report) if args.all_metrics else recommended(report)
     text = json.dumps(report, indent=2)
     if args.output:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)

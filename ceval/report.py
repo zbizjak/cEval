@@ -51,6 +51,9 @@ UNSUITABLE = {
 # Shape descriptors, computed for each graph; reported as |pred - reference|.
 DESCRIPTORS = ["Len_tot", "Len_br", "tortuosity", "Ang_bif"]
 
+# The set recommended in the paper, reported by default.
+RECOMMENDED = ["netmets_geom_F1", "junction_F1", "beta1_err", "beta0_err"]
+
 # Metrics that need information a centerline graph does not carry, listed so
 # the omission is visible.
 EXCLUDED = {
@@ -143,3 +146,11 @@ def summary(report, digits=4):
         "tolerance_mm": report["tolerance"]["tau_mm"],
         "metrics": groups,
     }
+
+
+def recommended(report, digits=4):
+    """The summary reduced to the four recommended metrics."""
+    short = summary(report, digits)
+    values = {k: v for group in short["metrics"].values() for k, v in group.items()}
+    short["metrics"] = {name: values[name] for name in RECOMMENDED}
+    return short
