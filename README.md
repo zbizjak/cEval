@@ -2,18 +2,65 @@
 
 Evaluation of centerline graphs. `ceval` compares a predicted centerline graph with a
 reference graph under one protocol. By default it reports the four recommended metrics, and
-it can report all metrics from the paper:
+it can report all metrics from the paper.
 
-- the curve metrics compare the curves themselves, so they do not depend on where either
-  graph places its nodes;
-- the node metrics (`node_F1`, `chamfer`, `false_merges`, `false_splits`) depend on node
-  spacing and are reported separately;
-- the tolerance is recorded with every score.
+## Which metrics to report
 
-![No single metric reports every error](docs/overview.png)
+Report these four metrics together as one set:
 
-*Different metrics respond to different errors (blue: the metric responds, red: it does not).
-No single metric reports every error, which is why the choice of metrics matters.*
+| Metric | Key | What it measures | Why it is in the set |
+|---|---|---|---|
+| **NetMets geom. F1** | `netmets_geom_F1` | Geometric agreement along the vessels | The best single metric under mixed errors |
+| **Junction F1** | `junction_F1` | Detection and localisation of branching points | The only metric that reliably detected a bifurcation shift (net detection 0.75) |
+| **β1 error** | `beta1_err` | Error in the number of independent cycles | The only metric in the set that responded strongly to a false loop (net detection 0.97) |
+| **β0 error** | `beta0_err` | Error in the number of connected components | Detected every disconnection and false component (net detection 1.00); 45% of the 1,220 evaluated graphs contained one of these errors |
+
+We injected errors into mixtures built from the error profiles of 1,220 graphs from four
+published methods and tested every set of up to five of the nineteen metrics, on 5,537 pairs
+of graphs. NetMets geom. F1, Junction F1 and β1 error together reached 99% of the coverage of
+all nineteen metrics and were the best set in 992 of 1,000 bootstrap replicates. β0 error is
+added because connectivity errors are common in evaluated graphs.
+
+<p align="center"><img src="docs/mixture_coverage.png" width="480" alt="Coverage as metrics are added one at a time"></p>
+
+*Coverage as metrics were added one at a time, with 95% confidence intervals.*
+
+- NetMets geom. F1 can be replaced by Edge F1 or ASCD (average symmetric centerline distance,
+  Liu et al. 2025 [[doi]](https://doi.org/10.1002/mp.17855)), at a coverage loss of 0.02 to 0.04.
+- β1 error can be left out when both graphs are constrained to be loop-free.
+- Other metrics can be added for a specific question with `--all-metrics`, for example HD95
+  for the largest geometric deviations.
+- We do not recommend the node metrics, which change with node spacing, or total length
+  alone. Total length rated the more damaged graph as better in 61% to 73% of the pairs in
+  which vessel was removed.
+
+![Net detection of one added error for every metric](docs/mixture_detection.png)
+
+*No metric detects every error. Net detection of one added error in a mixture of errors: 1
+means that the metric always ranked the more damaged graph as worse, and negative values mean
+that it more often ranked it as better.*
+
+## Errors tested
+
+![The injected error types](docs/error_types.png)
+
+## Independent of node spacing
+
+The curve metrics compare the curves themselves, so they do not depend on where either graph
+places its nodes. Eight metrics that change with node spacing when computed on nodes are
+computed on the centerlines instead. The node metrics (`node_F1`, `chamfer`, `false_merges`,
+`false_splits`) depend on node spacing and are reported separately only with `--all-metrics`
+or `--long-report`. The tolerance is recorded with every score.
+
+![Coverage computed on the centerline](docs/curve_metrics.png)
+
+*Coverage on the centerline: the evaluated graph is covered where it lies within τ of the
+reference (green) and uncovered elsewhere (red).*
+
+![The eight metrics computed on nodes and on the centerline](docs/spacing_nodes.png)
+
+*The same centerline with different node spacing: computed on the nodes, the values change
+(coloured lines); computed on the centerline, they stay perfect (dashed line).*
 
 ## Quick start (Docker)
 
@@ -109,14 +156,6 @@ descriptor
 
 `pred_pos` and `gt_pos` are `(N, 3)` arrays in mm, `pred_edges` and `gt_edges` are `(E, 2)`
 arrays of node indices. `report` holds the long report (the same as `--long-report`).
-
-## Recommended metrics
-
-We recommend reporting **NetMets geom. F1** (`netmets_geom_F1`), **Junction F1**
-(`junction_F1`), **β1 error** (`beta1_err`) and **β0 error** (`beta0_err`) together as one
-set. Other metrics can be reported in addition with `--all-metrics`, for example ASCD
-(average symmetric centerline distance, Liu et al. 2025) [[doi]](https://doi.org/10.1002/mp.17855).
-We do not recommend the node metrics, which change with node spacing, or total length alone.
 
 ## License
 
